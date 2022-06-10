@@ -1,0 +1,16 @@
+{
+	"name"			: "irregular_grid",
+	"version"		: "0.0.0.1",
+	"description"	: "",
+	"keywords"		: [ "webgl", "threejs" ],
+	"repository"	: { "url": "https://github.com/sketchpunklabs/irregular_grid.git", "type": "git" },
+	"author"		: { "name": "Sketchpunk", "email": "tmp@tmp.com", "url": "http://tmp" },
+	"license"		: "MIT",
+
+	"devDependencies": {
+		"browser-sync"  : "^2.27.5"
+	},
+	"scripts": {				
+		"start"  : "browser-sync start --config bs-config.js"
+	}
+}

@@ -1,0 +1,110 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title></title></head><body>
+<script type="module">
+
+// #region IMPORTS
+import Starter, { THREE }           from './lib/starter.js';
+import Util                         from './lib/Util.js';
+import DynLineMesh                  from './lib/DynLineMesh.js';
+import ShapePointsMesh              from './lib/ShapePointsMesh.js';
+import PixelFontMesh                from './lib/PixelFontMesh.js';
+
+import IrregularSphericalGrid       from './grid/IrregularSphericalGrid.js';
+
+import{ vec3_norm_scale }           from './lib/Maths.js';
+// #endregion
+
+// #region MAIN
+let App;
+let Debug   = {};
+let Ref     = {};
+
+window.addEventListener( "load", async _=>{
+    App = new Starter( { webgl2:true, grid:true } );
+    App.setCamera( 0, 0, 9, [0,0.0,0] );
+
+    App.add( ( Debug.ln  = new DynLineMesh() ) );
+    App.add( ( Debug.pnt = new ShapePointsMesh() ) );
+    App.add( ( Debug.px  = new PixelFontMesh() ) );
+
+    Debug.px.setRes( 2, 1 );
+    Debug.px.position.x = -3.5;
+    
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    const grid = IrregularSphericalGrid.build( 2, 4, 0, 0.1, 100 );
+    setRadius( grid, 1.95 );
+    debugVertices( grid );
+    //debugEdges( grid );
+    debugFaces( grid );
+    debugMesh( grid );
+    
+
+    let loop = 0;
+    setInterval( ()=>{
+        IrregularSphericalGrid._relaxFaces( grid, 2, 1, 0.1 );
+
+        Debug.pnt.reset();
+        Debug.ln.reset();
+
+        debugVertices( grid );
+        debugFaces( grid );
+
+        Debug.px.reset().add( (loop++).toString() );
+    }, 800 );
+
+
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    App.render();
+});
+//#endregion
+
+// #region DEBUG
+function setRadius( grid, radius ){
+    for( let v of grid.vertices ) vec3_norm_scale( v.pos, v.pos, radius );
+}
+
+function debugVertices( grid ){
+    for( const e of grid.vertices ) Debug.pnt.add( e.pos, 0x00ff00, 2 );
+}
+
+function debugEdges( grid ){
+    for( const e of grid.iterEdges() ) Debug.ln.add( e.a, e.b, 0x707070 );
+}
+
+function debugFaces( grid ){
+    for( const f of grid.faces ){
+        let edg = grid.halfEdges[ f.halfEdges[0] ];
+        let len = f.halfEdges.length;
+        for( let i=1; i <= len; i++ ){
+            let ii  = i % len;
+            let nex = grid.halfEdges[ f.halfEdges[ ii ] ];
+            Debug.ln.add( grid.getVertPos( edg.vertex ), grid.getVertPos( nex.vertex ), 0x707070 );
+            edg = nex;
+        }
+    }
+}
+
+function debugMesh( grid ){
+    const verts = grid.flattenVertices();
+    const ind   = grid.flattenIndices();
+    App.add( toMesh( verts, ind ) );
+}
+
+function toMesh( verts, idx ){
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    const bGeo = new THREE.BufferGeometry();
+    bGeo.setAttribute( "position",  new THREE.BufferAttribute( new Float32Array( verts ), 3 ) );
+    if( idx && idx.length > 0 )   bGeo.setIndex( idx );
+
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    const mat  = new THREE.MeshPhongMaterial( { color:0x009999 } ); // ,side:THREE.DoubleSide
+    const mesh = new THREE.Mesh( bGeo, mat );
+
+    return mesh;
+} 
+// #endregion
+
+</script>
+</body></html>
