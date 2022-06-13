@@ -49,7 +49,7 @@ export default function op_GetVertNeighbors( top, vertIdx, rtnObj=false, loopSaf
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Forward traversing by half edges
     he = heStart;
-    for( let i=0; i < 10; i++ ){
+    for( let i=0; i < loopSafey; i++ ){
         if( he.twin === -1 ) break;
         he = top.halfEdges[ he.twin ];
         he = top.halfEdges[ he.faceNext ];

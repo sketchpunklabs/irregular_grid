@@ -1,0 +1,115 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title></title></head><body>
+<script type="module">
+
+// #region IMPORTS
+import Starter, { THREE }           from './lib/starter.js';
+import DynLineMesh                  from './lib/DynLineMesh.js';
+import ShapePointsMesh              from './lib/ShapePointsMesh.js';
+
+import { Ray, Bvh, nearPoint, from3JSScreenProjection }
+                                    from './bvh/index.js';
+import { rndLcg }                   from './lib/Maths.js';
+// #endregion
+
+// #region MAIN
+let App;
+let Debug   = {};
+let Ref     = {};
+
+window.addEventListener( "load", async _=>{
+    App = new Starter( { webgl2:true, grid:true } );
+    App.setCamera( 0, 20, 14, [0,0.0,0] );
+
+    App.add( ( Debug.ln   = new DynLineMesh() ) );
+    App.add( ( Debug.pnt  = new ShapePointsMesh() ) );
+
+    App.add( ( Debug.ln2  = new DynLineMesh() ) );
+    App.add( ( Debug.pnt2 = new ShapePointsMesh() ) );
+
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // Generate Points
+    const pntCnt    = 15;
+    const v         = [0,0,0];
+    const rnd       = rndLcg( 300 );
+
+    Ref.points      = new Array();    
+    for( let i=0; i < pntCnt; i++ ){
+        v[ 0 ] = rnd() * 6 - 3;
+        v[ 1 ] = rnd() * 4;
+        v[ 2 ] = rnd() * 6 - 3;
+
+        Ref.points.push( v.slice(0) );
+    }
+
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    const bvh = new Bvh();
+    bvh.getItemPosition = ( data, idx )=>{ return data[ idx ]; };
+    bvh.setData( Ref.points );
+
+    Ref.bvh = bvh;
+
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // Render BVH & Points Data
+    const color = [ 0x81D773, 0x6DA9EA, 0xF7716A, 0x00ff00, 0x00ffff, 0xffff00 ];
+    let n, c = 0;
+    for( let i=0; i < bvh.nodes.length; i++ ){
+        n = bvh.nodes[ i ];
+        if( n.isLeaf ){
+            Debug.ln.box( n.minBound, n.maxBound, color[c] );
+
+            for( let i=0; i < n.sliceLength; i++ ){
+                Debug.pnt.add( bvh.getItemPosition( bvh.data, bvh.partitioned[ i+n.sliceIndex ] ), color[c], 8 );
+            }
+
+            c++;
+        }else{
+            Debug.ln.box( n.minBound, n.maxBound, 0x707070 );
+        }
+    }
+
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    App.render();
+});
+
+window.addEventListener( "pointerdown", e=>{
+    if( e.button != 2 ) return;
+
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // Compute the Ray and visually draw a line
+    const ray = from3JSScreenProjection( new Ray(), e.layerX, e.layerY, App );
+    ray.forAABB();
+
+    Debug.ln2.reset();
+    Debug.pnt2.reset();
+    Debug.ln2.add( ray.posStart, ray.posEnd, 0x00ffff );
+
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    console.log( Ref.bvh.rayIntersect( ray, onIntersect ) );
+} );
+
+function onIntersect( ray, slice ){
+    let min  = Infinity;
+    let iMin = -1;
+    let t;
+
+    for( let i of slice ){
+        t = nearPoint( ray,  Ref.bvh.data[ i ], 0.2 );
+        if( t !== null && t < min ){
+            min  = t;
+            iMin = i;
+        }
+    }
+
+    if( iMin != -1 ){
+        Debug.pnt2.add( Ref.bvh.data[ iMin ], 0xffffff, 10 );
+        return true;
+    }
+
+    return false;
+}
+//#endregion
+
+</script>
+</body></html>
