@@ -27,6 +27,7 @@ export class Bvh{
     partitioned     = null; // Partitioned indices of the data
     getItemPosition = null; // ( data, idx ): vec3
     boxScale        = 1.3;  // Make the boundary larger then they are
+    boundLmt        = 0.05; // Dont want flat boundaries, if found set a min axis size
     constructor(){}
     // #endregion
 
@@ -73,7 +74,7 @@ export class Bvh{
             // Do a quick sort, check every item and if its less
             // then the split plane, keep it on the left side and
             // increment forward. If its over, swap places with the
-            // end of the slice and deincrement the end of the slice.
+            // end of the slice and decrement the end of the slice.
             // The idea is to have the slice split based on the axis.
             // as this will create sub slices for splitting the
             // node into two bounding boxes.
@@ -182,6 +183,8 @@ export class Bvh{
         vec3_copy( n.minBound, [ Infinity,  Infinity,  Infinity] );
         vec3_copy( n.maxBound, [-Infinity, -Infinity, -Infinity] );
 
+        // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        // Compute the bounds of all the data
         let pos;
         const iEnd = n.sliceIndex + n.sliceLength;
         
@@ -191,6 +194,27 @@ export class Bvh{
             vec3_max( n.maxBound, n.maxBound, pos );
         }
 
+        // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        // Check if any boundary is flat like a plane, resize it a bit
+        // so its an actual box
+        let diff = vec3_sub( [0,0,0], n.maxBound, n.minBound );
+        if( diff[ 0 ] == 0 ){
+            n.minBound[ 0 ] -= this.boundLmt;
+            n.maxBound[ 0 ] += this.boundLmt;
+        }
+
+        if( diff[ 1 ] == 0 ){
+            n.minBound[ 1 ] -= this.boundLmt;
+            n.maxBound[ 1 ] += this.boundLmt;
+        }
+
+        if( diff[ 2 ] == 0 ){
+            n.minBound[ 2 ] -= this.boundLmt;
+            n.maxBound[ 2 ] += this.boundLmt;
+        }
+        
+        // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        // Scale boundary if scale isn't 1
         if( useScale && this.boxScale !== 1 ){
             const center = vec3_lerp( [0,0,0], n.minBound, n.maxBound, 0.5 );
             let p        = [0,0,0];
@@ -203,6 +227,8 @@ export class Bvh{
             vec3_scale( p, p, this.boxScale );
             vec3_add( n.maxBound, p, center );
         }
+
+        
     }
     // #endregion
 
