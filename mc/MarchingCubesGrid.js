@@ -13,10 +13,31 @@ class Point{
 }
 
 class Cell{
+    idx      = -1;
     enabled  = true;
     userData = null;
     corners  = null;
-    constructor( corners ){ this.corners = corners; }
+    coord    = [-1,-1,-1];
+    constructor( idx, corners ){
+        this.idx     = idx;
+        this.corners = corners;
+    }
+
+    setCoord( x, y, z ){
+        this.coord[ 0 ] = x;
+        this.coord[ 1 ] = y;
+        this.coord[ 2 ] = z;
+        return this;
+    }
+
+    getMidPos( pos ){
+        const min = this.corners[ 0 ].pos;
+        const max = this.corners[ 6 ].pos;
+        pos[ 0 ]  = min[ 0 ] * 0.5 + max[ 0 ] * 0.5;
+        pos[ 1 ]  = min[ 1 ] * 0.5 + max[ 1 ] * 0.5;
+        pos[ 2 ]  = min[ 2 ] * 0.5 + max[ 2 ] * 0.5;
+        return pos;
+    }
 
     getBitValue(){
         let i   = 0;
@@ -96,7 +117,7 @@ export default class MarchingCubesGrid{
 
                     //------------------------------
                     // Create cell with its 8 corner points, bottom to top
-                    this.cells[ i++ ] = new Cell([
+                    this.cells[ i ] = new Cell( i, [
                         this.points[ p0 ],          // Bottom Face
                         this.points[ p1 ],
                         this.points[ p2 ],
@@ -105,7 +126,8 @@ export default class MarchingCubesGrid{
                         this.points[ p1 + xzCnt ],
                         this.points[ p2 + xzCnt ],
                         this.points[ p3 + xzCnt ],
-                    ]);
+                    ]).setCoord( x, y, z );                    
+                    i++;
                 }
             }
         }

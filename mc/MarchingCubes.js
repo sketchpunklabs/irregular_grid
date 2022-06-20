@@ -1,5 +1,13 @@
-class MarchingCubes {
 
+/*
+Alternatves to Marching Cubes
+https://swiftcoder.wordpress.com/planets/isosurface-extraction/
+
+Transvoxel Algorithm - Extension of Marching cubes
+http://transvoxel.org/
+*/
+
+class MarchingCubes {
     //         4             5
     //         +-------------+
     //       / |           / |         

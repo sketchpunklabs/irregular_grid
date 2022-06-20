@@ -1,0 +1,216 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title></title></head><body>
+<script type="module">
+
+// #region IMPORTS
+import Starter, { THREE }           from './lib/starter.js';
+import DynLineMesh                  from './lib/DynLineMesh.js';
+import ShapePointsMesh              from './lib/ShapePointsMesh.js';
+import DynamicMesh                  from './lib/DynamicMesh.js';
+import { UtilGltf2, Gltf2 }         from './lib/UtilGltf2.js';
+
+import { Ray, Bvh, nearPoint, from3JSScreenProjection }
+                                    from './bvh/index.js';
+
+import MarchingCubesGrid            from './mc/MarchingCubesGrid.js';
+import TileDictionary               from './mc/TileDictionary.js';
+// #endregion
+
+// #region MAIN
+let App;
+let Debug   = {};
+let Ref     = {};
+
+window.addEventListener( "load", async _=>{
+    App = new Starter( { webgl2:true, grid:true } );
+    App.setCamera( 30, 30, 10, [0,0.5,0] );
+
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    App.add( ( Debug.ln   = new DynLineMesh() ) );
+    App.add( ( Debug.pnt  = new ShapePointsMesh().disableDepth() ) );
+
+    Ref.dmesh = new DynamicMesh();
+    App.add( Ref.dmesh.mesh );
+
+    Ref.mat   = new THREE.MeshPhongMaterial( { color:0x00ffff, flatShading:true } );
+
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // Setup our Grid Data
+    const mc = new MarchingCubesGrid( [4,3,4], 1, true ); //[5,3,5]
+    Ref.mc = mc;
+    //Ref.mc.togglePointByIdx( 4 );
+    mcRenderPoints();
+
+    // Initialize all the cells with some userData
+    mc.cells.forEach( (v,i,ary)=>{ ary[i].userData = { bitValue:0, mesh:null }; });
+    
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // Setup what we need to do ray intersection on Grid Points
+    const bvh = new Bvh();
+    bvh.maxItemsPerNode = 20;
+    bvh.getItemPosition = ( data, idx )=>{ return data[ idx ].pos; };
+    bvh.setData( mc.points );
+    Ref.bvh = bvh;
+
+    // debugBVH();
+
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    const gltf  = await Gltf2.fetch( './res/mc_tiles.gltf' );
+    Ref.dic     = new TileDictionary();
+    tileLoading( gltf, Ref.dic );
+
+    mcRebuild();
+
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    App.render();
+});
+
+// #region BVH INTERSECTION
+window.addEventListener( "pointerdown", e=>{
+    if( e.button != 2 ) return;
+
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // Compute the Ray and visually draw a line
+    const ray = from3JSScreenProjection( new Ray(), e.layerX, e.layerY, App );
+    ray.forAABB();
+
+    //Debug.ln.add( ray.posStart, ray.posEnd, 0x00ffff );
+
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    Ref.bvh.rayIntersect( ray, onIntersect );
+} );
+
+function onIntersect( ray, slice ){
+    const RNG  = 0.2;
+    let min    = Infinity;
+    let iMin   = -1;
+    let t;
+
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    for( let i of slice ){
+        // Loop all the points in the slice & test which
+        // one is the closest to the ray
+        t = nearPoint( ray,  Ref.bvh.data[ i ].pos, RNG );
+        if( t !== null && t < min ){
+            min  = t;
+            iMin = i;
+        }
+    }
+
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // Point interesected
+    if( iMin != -1 ){
+        Ref.mc.togglePointByIdx( iMin );    // Toggle it's state
+        mcRebuild();                        // Rebuild Mesh
+        return true;
+    }
+
+    return false;
+}
+// #endregion
+
+// #region BUILDING / RENDERING
+function tileLoading( gltf, dic ){
+    const mCnt = gltf.json.meshes.length;
+    let m, geo, bits;
+
+    for( let i=0; i < mCnt; i++ ){
+        if( !gltf.json.meshes[ i ].name.startsWith( 'cliff' ) ) continue;
+
+        m    = gltf.getMesh( i );
+        geo  = UtilGltf2.primitiveGeo( m.primitives[ 0 ] );
+        bits = TileDictionary.parseBits( m.name );
+        dic.addUniqueTile( m.name, bits, geo );
+    }
+}
+
+function mcRebuild(){
+    Debug.ln.reset();
+
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    let bValue;
+    let tiles, tile, uTile;
+    let pos = [0,0,0];
+    for( let cell of Ref.mc.cells ){
+        // ------------------------------------
+        // If cell value hasn't changed, then skip
+        bValue = cell.getBitValue();
+        if( cell.userData.bitValue === bValue ) continue;
+
+        cell.userData.bitValue = bValue;
+
+        // ------------------------------------
+        // If setting empty space, then hide mesh
+        if( bValue === 0 || bValue === 255 ){
+            cell.userData.mesh.visible = false;
+            continue;
+        }
+
+        // ------------------------------------
+        // If tile doesn't exist, then hide any mesh with an error message.
+        tiles = Ref.dic.tiles[ bValue ];
+        if( !tiles ){
+            console.log( 'no tiles found for: ', bValue );
+            cell.userData.mesh.visible = false;
+            Debug.ln.box( cell.corners[0].pos, cell.corners[6].pos, 0xff0000 );
+            continue;
+        }
+
+        // ------------------------------------
+        // Generate mesh tile or replace geometry
+        tile  = tiles[ 0 ];
+        uTile = Ref.dic.uniqueTiles[ tile.tileId ];
+        
+        if( cell.userData.mesh ){
+            cell.userData.mesh.geometry = uTile.geo;
+        }else{
+            cell.userData.mesh = new THREE.Mesh( uTile.geo, Ref.mat );
+            cell.userData.mesh.position.fromArray( cell.getMidPos( pos ) );
+            cell.userData.mesh.scale.fromArray( [0.5,0.5,0.5] );
+            App.add( cell.userData.mesh );
+        }
+
+        cell.userData.mesh.visible = true;
+        cell.userData.mesh.quaternion.fromArray( tile.rotation );
+    }
+
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    mcRenderPoints();                           // ReRender MC Points
+}
+
+function mcRenderPoints(){
+    Debug.pnt.reset();
+    for( let p of Ref.mc.points ){
+        Debug.pnt.add( p.pos, (!p.enabled)?0x707070:0xffffff, 3 );
+    }
+}
+// #endregion
+
+// #region DEBUGGING
+function debugBVH(){
+    const bvh   = Ref.bvh;
+    const color = [ 0x81D773, 0x6DA9EA, 0xF7716A, 0x00ff00, 0x00ffff, 0xffff00 ];
+    let n, c = 0;
+    for( let i=0; i < bvh.nodes.length; i++ ){
+        n = bvh.nodes[ i ];
+        if( n.isLeaf ){
+            Debug.ln.box( n.minBound, n.maxBound, color[c] );
+
+            for( let i=0; i < n.sliceLength; i++ ){
+                Debug.pnt.add( bvh.getItemPosition( bvh.data, bvh.partitioned[ i+n.sliceIndex ] ), color[c], 2 );
+            }
+
+            c++;
+        }else{
+            Debug.ln.box( n.minBound, n.maxBound, 0x707070 );
+        }
+    }
+}
+// #endregion
+
+</script>
+<div style="position:fixed; top:0px; left:0px; padding:5px; background-color:#ffffff20">
+   Right click to select or deselect a point on the grid.
+</div>
+</body></html>
