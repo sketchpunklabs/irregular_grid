@@ -29,7 +29,7 @@ window.addEventListener( "load", async _=>{
     const gltf  = await Gltf2.fetch( './res/mc_tiles.gltf' );
     const dic   = new TileDictionary();
 
-    const m   = gltf.getMesh( 0 ); //6
+    const m   = gltf.getMesh( 9 ); //6
     const geo = UtilGltf2.primitiveGeo( m.primitives[ 0 ] );
     const c   = TileDictionary.parseBits( m.name );
 
