@@ -1,0 +1,151 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title></title></head><body>
+<script type="module">
+
+// #region IMPORTS
+import Starter, { THREE }           from './lib/starter.js';
+import Util                         from './lib/Util.js';
+import DynLineMesh                  from './lib/DynLineMesh.js';
+import ShapePointsMesh              from './lib/ShapePointsMesh.js';
+import IrregularHexGrid             from './grid/IrregularHexGrid.js';
+
+import { UtilGltf2, Gltf2 }         from './lib/UtilGltf2.js';
+
+import { vec3_distance }            from './lib/Maths.js';
+import op_GetVertFaces              from './halfedge/ops/op_GetVertFaces.js';
+import op_FaceCentroid              from './halfedge/ops/op_FaceCentroid.js';
+import op_FacePoints                from './halfedge/ops/op_FacePoints.js';
+
+import TrilinearLattice             from './trilinear/TrilinearLattice.js';
+import TrilinearLatticeMaterial     from './trilinear/TrilinearLatticeMaterial.js';
+// #endregion
+
+// #region MAIN
+let App;
+let Debug   = {};
+let Ref     = {};
+
+window.addEventListener( "load", async _=>{
+    App = new Starter( { webgl2:true, grid:true } );
+    App.setCamera( 0, 50, 9, [0,0.0,0] );
+
+    App.add( ( Debug.ln  = new DynLineMesh() ) );
+    App.add( ( Debug.pnt = new ShapePointsMesh() ) );
+    
+    Debug.ln.position.y = 0.005;
+    Debug.pnt.position.y = 0.005;
+
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // LOAD IN MESH
+    const gltf  = await Gltf2.fetch( './res/mc_tiles.gltf' );
+    const m     = gltf.getMesh( 9 );
+    const geo   = UtilGltf2.primitiveGeo( m.primitives[ 0 ] );
+
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // SIMPLE GRID FOR TESTING
+    const grid = IrregularHexGrid.build( 3, 2, 50, 0.1, 100, 0 );
+    // debugVertices( grid );
+    // debugEdges( grid );
+    debugFaces( grid );
+    debugMesh( grid );
+
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // MAKE CUBE TILE FIT IRREGULAR GRID CELL
+    const faces   = op_GetVertFaces( grid, 6 ); // Get all the faces that shares a specific vertex
+    const lattice = new TrilinearLattice();
+    lattice.setBounds( [-1,-1,-1], [1,1,1] );
+
+    let mat, mesh, pnts;
+    for( let i=0; i < faces.length; i++ ){
+        // -------------------------------------------------
+        pnts = op_FacePoints( grid, faces[ i ] );                        // Get the Points of the Grid Cell
+        lattice.setFootPrint( pnts[0], pnts[3], pnts[2], pnts[1], 1 );   // Use face as the footprint for the lattice, Lattice is CW but face is CCW
+        
+        // -------------------------------------------------
+        mat                   = TrilinearLatticeMaterial();
+        mat.userData.cube     = lattice.cube.slice( 0 ); // Clone Data, each tile has different lattice points
+        mat.userData.minBound = lattice.minBound;        // Bound is the same for all tiles
+        mat.userData.maxBound = lattice.maxBound;
+
+        mesh                  = new THREE.Mesh( geo, mat );
+        App.add( mesh );
+
+        // -------------------------------------------------
+        if( i == 2 ){
+            debugFaceOrder( grid, faces[ i ] );
+            debugLattice( lattice );
+        }
+        // break;
+    }
+
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    App.render();
+});
+//#endregion
+
+// #region DEBUG
+function setRadius( grid, radius ){
+    for( let v of grid.vertices ) vec3_norm_scale( v.pos, v.pos, radius );
+}
+
+function debugVertices( grid ){
+    for( const e of grid.vertices ) Debug.pnt.add( e.pos, 0x00ff00, 2 );
+}
+
+function debugEdges( grid ){
+    for( const e of grid.iterEdges() ) Debug.ln.add( e.a, e.b, 0x707070 );
+}
+
+function debugFaces( grid ){
+    for( const f of grid.faces ){
+        let edg = grid.halfEdges[ f.halfEdges[0] ];
+        let len = f.halfEdges.length;
+        for( let i=1; i <= len; i++ ){
+            let ii  = i % len;
+            let nex = grid.halfEdges[ f.halfEdges[ ii ] ];
+            Debug.ln.add( grid.getVertPos( edg.vertex ), grid.getVertPos( nex.vertex ), 0x707070 );
+            edg = nex;
+        }
+    }
+}
+
+function debugMesh( grid ){
+    const verts = grid.flattenVertices();
+    const ind   = grid.flattenIndices();
+    const mesh  = toMesh( verts, ind );
+    mesh.position.y = 0.001;
+    App.add( mesh  );
+}
+
+function toMesh( verts, idx ){
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    const bGeo = new THREE.BufferGeometry();
+    bGeo.setAttribute( "position",  new THREE.BufferAttribute( new Float32Array( verts ), 3 ) );
+    if( idx && idx.length > 0 )   bGeo.setIndex( idx );
+
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    const mat  = new THREE.MeshPhongMaterial( { color:0x009999 } ); // ,side:THREE.DoubleSide
+    const mesh = new THREE.Mesh( bGeo, mat );
+
+    return mesh;
+} 
+
+function debugLattice( lattice ){
+    for( let v of lattice.iterPoints() ){
+        Debug.pnt.add( v, 0xffff00, 4 );
+    }
+}
+
+function debugFaceOrder( grid, fIdx ){
+    const color = [ 0xF7716A, 0x81D773, 0x6DA9EA, 0xffffff, 0x00ff00, 0x00ffff, 0xffff00 ];        
+    const pnts  = op_FacePoints( grid, fIdx );
+
+    for( let i=0; i < pnts.length; i++ ){
+        Debug.pnt.add( pnts[i], color[i], 10 );
+    }
+}
+// #endregion
+
+</script>
+</body></html>
