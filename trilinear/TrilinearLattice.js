@@ -22,12 +22,10 @@ export default class TrilinearLattice{
     setBounds( min, max ){
         vec3_copy( this.minBound, min );
         vec3_copy( this.maxBound, max );
-        this._updateCube();
+        this._updateCubeFromBound();
         return this;
     }
-    // #endregion
 
-    // #region METHODS
     addOffset( idx, offset ){
         const i = idx * 3;
         this.cube[ i+0 ] += offset[ 0 ];
@@ -58,10 +56,25 @@ export default class TrilinearLattice{
         vec3_buf_set( cc, 7*3, c[0], c[1]+yOffset, c[2] );
         vec3_buf_set( cc, 6*3, d[0], d[1]+yOffset, d[2] );
     }
+
+    fromMarchingCube( mc ){
+        const cc = this.cube;
+        // Bottom Plane - Clockwise from top left corner
+        vec3_buf_set( cc, 0*3, mc[0][0], mc[0][1], mc[0][2] ); 
+        vec3_buf_set( cc, 1*3, mc[1][0], mc[1][1], mc[1][2] );
+        vec3_buf_set( cc, 5*3, mc[2][0], mc[2][1], mc[2][2] );
+        vec3_buf_set( cc, 4*3, mc[3][0], mc[3][1], mc[3][2] ); 
+
+        // Top Plane - Clockwise from top left corner
+        vec3_buf_set( cc, 2*3, mc[4][0], mc[4][1], mc[4][2] );
+        vec3_buf_set( cc, 3*3, mc[5][0], mc[5][1], mc[5][2] );
+        vec3_buf_set( cc, 7*3, mc[6][0], mc[6][1], mc[6][2] );
+        vec3_buf_set( cc, 6*3, mc[7][0], mc[7][1], mc[7][2] );
+    }
     // #endregion
 
     // #region CUBE
-    _updateCube(){
+    _updateCubeFromBound(){
         const [ x0, y0, z0 ] = this.minBound;
         const [ x1, y1, z1 ] = this.maxBound;
         const c              = this.cube;
