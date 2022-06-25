@@ -307,7 +307,7 @@ function rebuild(){
 function renderPoints(){
     Debug.pnt.reset();
     for( let p of Ref.irGrid.points ){
-        Debug.pnt.add( p.pos, (!p.enabled)?0x707070:0xffffff, 3 );
+        Debug.pnt.add( p.pos, (!p.enabled)?0x707070:0x00ff00, 3 );
     }
 }
 
