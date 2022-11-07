@@ -2,3 +2,14 @@
  // of all the faces to represet the "tile shape" but all you do is activate that point, then you fill in the quads
  // that the point is part of.
  // https://twitter.com/Calneon/status/1424292736459493378?s=20&t=_INTx0HPCS5EcS5rM1eBbQ
+
+
+ Here's my trick to try make quads square: 
+force = 0
+for(i< 4){
+ force += verts[i] - center
+ force = (force .y,-force .x)}
+
+for(i < 4){
+ forces[i]  += center + force - verts[i]
+ force = (force.y,-force .x)}
