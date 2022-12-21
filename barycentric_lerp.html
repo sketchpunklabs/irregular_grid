@@ -168,27 +168,8 @@ function BarycentricLatticeMaterial(){
         //               points[1] * bWeight.y + 
         //               points[2] * bWeight.z;
         // transformed.y = pos.y;
-
-
-        // https://en.wikipedia.org/wiki/Trilinear_interpolation
-        // vec3 pos = position;
-        // float xd = ( pos.x - minBound.x ) / ( maxBound.x - minBound.x );
-        // float yd = ( pos.y - minBound.y ) / ( maxBound.y - minBound.y );
-        // float zd = ( pos.z - minBound.z ) / ( maxBound.z - minBound.z );
-        
-        // vec3 c00 = cube[0] * ( 1.0 - xd ) + cube[1] * xd;   // Back Plane
-        // vec3 c01 = cube[2] * ( 1.0 - xd ) + cube[3] * xd;
-        // vec3 c10 = cube[4] * ( 1.0 - xd ) + cube[5] * xd;   // Forward Plane
-        // vec3 c11 = cube[6] * ( 1.0 - xd ) + cube[7] * xd;
-
-        // vec3 c0  = c00 * ( 1.0 - zd ) + c10 * zd;
-        // vec3 c1  = c01 * ( 1.0 - zd ) + c11 * zd;
-
-        // transformed = c0 * ( 1.0 - yd ) + c1 * yd;
         `);
     };
-
-    
 
     return mat;
 }
