@@ -140,13 +140,17 @@ function BarycentricLatticeMaterial(){
         bWeight.x    = 1.0 - bWeight.y - bWeight.z;
         
         // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        // Extra - Get the weight on the Y axis which will be
-        // to interpolate between the the bottom + top triangle
+        // Extra - Get the weight on the Y axis which will be 
+        // used to interpolate between the bottom + top triangle
 
         float yWeight = ( pos.y - minY ) / ( maxY - minY );
 
 
         // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        // Use the weights to find where to the point
+        // exists within the lattice, then use the Y
+        // weight to interpolate between the two triangles
+
         vec3 triBot = points[0] * bWeight.x + 
                       points[1] * bWeight.y + 
                       points[2] * bWeight.z;
