@@ -1,0 +1,304 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title></title></head><body>
+<script type="module">
+// #region IMPORTS
+import Starter, { THREE }           from './lib/starter.js';
+import DynLineMesh                  from './lib/DynLineMesh.js';
+import ShapePointsMesh              from './lib/ShapePointsMesh.js';
+import { UtilGltf2, Gltf2 }         from './lib/UtilGltf2.js';
+import { vec3_copy, vec3_set, vec3_buf_set }                
+                                    from './lib/Maths.js';
+
+import { Manipulator3D }            from './lib/manipulator3d.es.js';
+// #endregion
+
+// #region MAIN
+let App;
+let Debug   = {};
+let Ref     = {};
+
+window.addEventListener( "load", async _=>{
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    App = new Starter( { webgl2:true, grid:true } );
+    App.setCamera( 0, 20, 7, [0,0.5,0] );
+
+    App.add( ( Debug.ln   = new DynLineMesh() ) );
+    App.add( ( Debug.pnt  = new ShapePointsMesh() ) );
+
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // LOAD IN MESH
+    const gltf  = await Gltf2.fetch( './res/cauldron.gltf' );
+    //let mat   = new THREE.MeshPhongMaterial( {color:'cyan' } );
+    let  mat   = BarycentricLatticeMaterial();
+    let  mesh  = UtilGltf2.loadMesh( gltf, null, mat );
+    mesh.geometry.computeBoundingBox();
+    App.add( mesh );
+
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // SETUP LATTICE CONTROL
+
+    const lattice = new BarycentricLattice()
+        .fromBoundingBox( 
+            mesh.geometry.boundingBox.min.toArray(), 
+            mesh.geometry.boundingBox.max.toArray()
+        );
+
+    mat.userData.points = lattice.points;
+    mat.userData.tri0   = lattice.pa;
+    mat.userData.tri1   = lattice.pb;
+    mat.userData.tri2   = lattice.pc;
+    mat.userData.minY   = lattice.minY;
+    mat.userData.maxY   = lattice.maxY;
+
+    Ref.lattice         = lattice;
+
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // 3D TRANSFORM GIZMO
+    Ref.man = new Manipulator3D( App.scene, App.camera, App.renderer, false );
+    Ref.man.setActive( true ).useScale( false ).useRotate( false ).setScaleFactor(12);
+
+    // Hook into events to disable camera controller when user does a drag action
+    Ref.man.on( 'dragstart', ()=>{ App.orbit.enabled = false; } );
+    Ref.man.on( 'dragend', ()=>{   App.orbit.enabled = true; } );
+    Ref.man.on( 'translate', e=>{
+        Ref.lattice.setPos( Ref.selected, e.detail );
+    });
+
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // LATTICE POINTS
+    const geo    = new THREE.SphereGeometry( 0.05, 8, 8 );
+    mat          = new THREE.MeshBasicMaterial( { color: 0x00ff00 } );
+
+    let i=0;
+    Ref.points = [];
+    for( let p of lattice.iterPoints() ){
+        mesh = new THREE.Mesh( geo, mat );
+        mesh.position.fromArray( p );
+        Ref.points.push( mesh );
+        App.add( mesh );
+    }
+
+    selectPoint( 4 );
+
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    App.render();
+});
+
+window.addEventListener( 'keydown', e=>{
+    if( e.key >= 1 && e.key <= 6 ) selectPoint( e.key );
+});
+
+function selectPoint( idx ){
+    const i = idx - 1;
+    Ref.selected = i;
+    Ref.man.attach( Ref.points[ i ] );
+}
+//#endregion
+
+
+function BarycentricLatticeMaterial(){
+    const mat = new THREE.MeshLambertMaterial( { color: 0x707070, wireframe: false } );
+    
+    mat.userData.tri0     = null;
+    mat.userData.tri1     = null;
+    mat.userData.tri2     = null;
+    mat.userData.minY     = null;
+    mat.userData.maxY     = null;
+    mat.userData.points   = null;
+
+    mat.onBeforeCompile   = (sh)=>{
+        sh.uniforms.tri0     = { value: mat.userData.tri0 };
+        sh.uniforms.tri1     = { value: mat.userData.tri1 };
+        sh.uniforms.tri2     = { value: mat.userData.tri2 };
+        sh.uniforms.points   = { value: mat.userData.points };
+        sh.uniforms.minY     = { value: mat.userData.minY };
+        sh.uniforms.maxY     = { value: mat.userData.maxY };
+
+        sh.vertexShader      = `uniform vec3 points[6]; uniform vec3 tri0; uniform vec3 tri1; uniform vec3 tri2; uniform float minY; uniform float maxY;\n` + sh.vertexShader;
+        sh.vertexShader      = sh.vertexShader.replace( '#include <begin_vertex>',
+        `#include <begin_vertex>
+        vec3 pos = position;
+        
+        // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        // Barycentric Weights / Coordinates
+        vec2 v0   = tri1.xz - tri0.xz;
+        vec2 v1   = tri2.xz - tri0.xz;
+        vec2 v2   = pos.xz  - tri0.xz;
+        
+        float d00 = dot( v0, v0 );  // can be cached
+        float d01 = dot( v0, v1 );  // can be cached
+        float d11 = dot( v1, v1 );  // can be cached
+        float d20 = dot( v2, v0 );
+        float d21 = dot( v2, v1 );
+
+        float invDenom = 1.0 / ( d00 * d11 - d01 * d01 ); // can be cached
+        
+        vec3 bWeight = vec3( 0.0, 0.0, 0.0 );
+        bWeight.y    = ( d11 * d20 - d01 * d21 ) * invDenom;
+        bWeight.z    = ( d00 * d21 - d01 * d20 ) * invDenom;
+        bWeight.x    = 1.0 - bWeight.y - bWeight.z;
+        
+        // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        // Extra - Get the weight on the Y axis which will be
+        // to interpolate between the the bottom + top triangle
+
+        float yWeight = ( pos.y - minY ) / ( maxY - minY );
+
+
+        // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        vec3 triBot = points[0] * bWeight.x + 
+                      points[1] * bWeight.y + 
+                      points[2] * bWeight.z;
+
+        vec3 triTop = points[3] * bWeight.x + 
+                      points[4] * bWeight.y + 
+                      points[5] * bWeight.z;
+
+        transformed = mix( triBot, triTop, yWeight );
+
+
+        // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        // Using Bottom Triangle Only test
+        // transformed = points[0] * bWeight.x + 
+        //               points[1] * bWeight.y + 
+        //               points[2] * bWeight.z;
+        // transformed.y = pos.y;
+
+
+        // https://en.wikipedia.org/wiki/Trilinear_interpolation
+        // vec3 pos = position;
+        // float xd = ( pos.x - minBound.x ) / ( maxBound.x - minBound.x );
+        // float yd = ( pos.y - minBound.y ) / ( maxBound.y - minBound.y );
+        // float zd = ( pos.z - minBound.z ) / ( maxBound.z - minBound.z );
+        
+        // vec3 c00 = cube[0] * ( 1.0 - xd ) + cube[1] * xd;   // Back Plane
+        // vec3 c01 = cube[2] * ( 1.0 - xd ) + cube[3] * xd;
+        // vec3 c10 = cube[4] * ( 1.0 - xd ) + cube[5] * xd;   // Forward Plane
+        // vec3 c11 = cube[6] * ( 1.0 - xd ) + cube[7] * xd;
+
+        // vec3 c0  = c00 * ( 1.0 - zd ) + c10 * zd;
+        // vec3 c1  = c01 * ( 1.0 - zd ) + c11 * zd;
+
+        // transformed = c0 * ( 1.0 - yd ) + c1 * yd;
+        `);
+    };
+
+    
+
+    return mat;
+}
+
+class BarycentricLattice{
+    // #region MAIN
+    pa      = [0,0,0];
+    pb      = [0,0,0];
+    pc      = [0,0,0];
+    minY    = 0;
+    maxY    = 0;
+    points  = [
+        0,0,0,  0,0,0,  0,0,0,
+        0,0,0,  0,0,0,  0,0,0,
+    ];
+
+    constructor(){}
+    // #endregion
+
+    // #region METHODS
+    fromBoundingBox( min, max ){
+        // TODO find way to make a triangle that can fit a boxing box.
+        // Maybe compute a sphere that fits the box inside, then use
+        // that sphere to compute the triangle points by determining 4 points
+        // of a circle ( top,left,right,bottom )
+
+        const scl     = 2.5; // Hack to make triangle fit box, only work for this demo
+        const offset  = 0.4;
+
+        const sMin = min.slice();
+        const sMax = max.slice();
+        sMin[0]   = sMin[0] * scl;
+        sMin[2]   = sMin[2] * scl + offset;
+        sMax[0]   = sMax[0] * scl;
+        sMax[2]   = sMax[2] * scl + offset;
+
+        
+        this.minY  = min[1];
+        this.maxY  = max[1];
+
+        this.pa[0] = sMin[0];
+        this.pa[1] = sMin[1];
+        this.pa[2] = sMin[2];
+
+        this.pb[0] = sMax[0];
+        this.pb[1] = sMin[1];
+        this.pb[2] = sMin[2];
+
+        this.pc[0] = sMin[0]*0.5 + sMax[0]*0.5;
+        this.pc[1] = sMin[1];
+        this.pc[2] = sMax[2];
+        
+        this.resetPoints();
+        return this;
+    }
+
+    resetPoints(){
+        const p = this.points;
+        p[0] = this.pa[0];
+        p[1] = this.pa[1];
+        p[2] = this.pa[2];
+
+        p[3] = this.pb[0];
+        p[4] = this.pb[1];
+        p[5] = this.pb[2];
+
+        p[6] = this.pc[0];
+        p[7] = this.pc[1];
+        p[8] = this.pc[2];
+
+        p[9] = this.pa[0];
+        p[10] = this.maxY;
+        p[11] = this.pa[2];
+
+        p[12] = this.pb[0];
+        p[13] = this.maxY;
+        p[14] = this.pb[2];
+
+        p[15] = this.pc[0];
+        p[16] = this.maxY;
+        p[17] = this.pc[2];
+    }
+    
+    setPos( idx, pos ){
+        const i = idx * 3;
+        this.points[ i+0 ] = pos[ 0 ];
+        this.points[ i+1 ] = pos[ 1 ];
+        this.points[ i+2 ] = pos[ 2 ];
+        return this;
+    }
+    // #endregion
+
+    // #region ITERATORS
+    iterPoints(){
+        let   i      = 0;
+        const result = { value:[0,0,0], done:false };
+        const next   = ()=>{
+            if( i >= this.points.length ) result.done = true;
+            else{
+                result.value[ 0 ] = this.points[ i+0 ];
+                result.value[ 1 ] = this.points[ i+1 ];
+                result.value[ 2 ] = this.points[ i+2 ];
+            }
+            i += 3;
+            return result;
+        };
+
+        return { [Symbol.iterator](){ return { next }; } };
+    }
+    // #endregion
+}
+
+</script>
+<div style="position:fixed; top:0px; left:0px; padding:5px; background-color:#ffffff20">
+    To Select points use the keyboard : 1,2,3,4,5,6
+</div>
+</body></html>
